@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+dist/
+build/
+
+# ECHO local state (audio cache, DB copies, exported vault)
+/audio_cache/
+/vault_export/
+*.db
+*.db-wal
+*.db-shm
+
+# Secrets
+.env

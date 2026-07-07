@@ -1,0 +1,48 @@
+[project]
+name = "echo-engine"
+version = "0.1.0"
+description = "ECHO — a personalized knowledge graph of musical taste (vibe graph)"
+requires-python = ">=3.12"
+dependencies = [
+    # Spotify library sync + playlist writing (audio-features endpoints are dead;
+    # Spotify is metadata + playlists only — all acoustic analysis is local).
+    "spotipy>=2.24",
+    # Local API + graph/viz server (mirrors Vein/Atlas).
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "websockets>=12",
+    # Modeling + graph (kept in core so `uv sync` never prunes them).
+    "numpy>=1.26",
+    "scikit-learn>=1.4",
+    "networkx>=3.2",
+]
+
+# Audio extraction stack (Librosa + Essentia + yt-dlp). Heavy / platform-touchy
+# (Essentia TF models, ffmpeg), so isolated behind an extra: `uv sync --extra audio`.
+[project.optional-dependencies]
+audio = [
+    "yt-dlp>=2024.8",
+    "librosa>=0.10",
+    # Floor numba/llvmlite so the resolver can't backtrack to the ancient numba
+    # 0.53 (Python <3.10 only) when satisfying the pinned numpy/essentia versions.
+    "numba>=0.61",
+    # Pinned exactly: this is the newest essentia-tensorflow dev build that ships a
+    # cp312 arm64-macOS wheel. Newer builds (dev1438+) are cp314-only, and we can't
+    # move to Python 3.14 because librosa's numba dep doesn't support it yet.
+    "essentia-tensorflow==2.1b6.dev1389",
+    "soundfile>=0.12",
+]
+# Clustering (M3) and the MCP server (M4) — additive, opt-in.
+cluster = ["hdbscan>=0.8.33"]
+mcp = ["mcp>=1.2"]
+
+[project.scripts]
+echo = "echo.cli:main"
+echo-server = "echo.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["engine/echo"]
