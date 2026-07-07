@@ -43,13 +43,25 @@ uv run echo status           # progress
 | Command | What it does |
 |---|---|
 | `echo init` | One-time Spotify OAuth consent |
+| `echo probe` | Check if this app retains `audio-features` / `preview_url` access |
 | `echo sync` | Pull Liked Songs metadata into `echo.db` (incremental) |
+| `echo enrich` | Fuse open feature DBs (MusicBrainz/AcousticBrainz/Deezer/Last.fm) by ISRC |
 | `echo models` | Download Essentia pretrained models (idempotent) |
 | `echo ingest` | Fetch audio + extract features for pending tracks (resumable) |
 | `echo backfill` | One-shot: models + sync + ingest (the overnight run) |
 | `echo status` | Library / pipeline counts |
 
 Later milestones add `echo pairs`, `echo train`, `echo graph`, `echo serve`, `echo watch`.
+
+## Audio sources & enrichment
+
+Audio for analysis is pluggable (`ECHO_AUDIO_SOURCE=ytdlp|preview|loopback`) — see
+[docs/STARTUP.md](docs/STARTUP.md). Beyond local Librosa/Essentia extraction, ECHO fuses
+precomputed features from open databases (AcousticBrainz, Deezer, MusicBrainz, Last.fm) for
+coverage + cross-validation — see [docs/ENRICHMENT.md](docs/ENRICHMENT.md). Porting to another
+machine for loopback capture: [docs/JARVIS.md](docs/JARVIS.md).
+
+Docs: [REQUIREMENTS.md](REQUIREMENTS.md) · [docs/STARTUP.md](docs/STARTUP.md) · [HANDOFF.md](HANDOFF.md) (for a new agent).
 
 ## Layout
 

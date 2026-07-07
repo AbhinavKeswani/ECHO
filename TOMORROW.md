@@ -42,6 +42,16 @@ uv run echo probe
   extra signal on top of the local analysis.
 - If neither → the default yt-dlp path (already built) is used. Just proceed.
 
+## 2c. Enrich from open databases (fast, do it first)
+
+```bash
+uv run echo sync     # pull the library first
+uv run echo enrich   # fuse MusicBrainz + AcousticBrainz + Deezer by ISRC (API-only, quick)
+```
+
+This gives immediate multi-source coverage (AcousticBrainz Essentia moods/genres, Deezer BPM)
+before the slow local audio analysis even starts. See `docs/ENRICHMENT.md`.
+
 ## 3. Run the backfill (the long part — leave it running)
 
 ```bash
