@@ -104,13 +104,21 @@ def _acquire_preview(track: dict) -> tuple[Path, str]:
     if cached:
         return cached, "spotify_preview"
 
+    # Prefer Spotify's own preview; fall back to Deezer's keyless preview (same 30s
+    # snippet path, works for any track with an ISRC — no grandfathered app needed).
     url = track.get("preview_url")
+    source_id = "spotify_preview"
+    if not url:
+        from . import enrich
+
+        url = enrich.deezer_preview_url(track.get("isrc"), track["artist"], track["title"])
+        source_id = "deezer_preview"
     if not url:
         raise AudioError(
-            "no preview_url for this track — the app may lack preview access "
-            "(run `echo probe`) or this track has no preview."
+            "no preview available (Spotify preview_url empty and no Deezer match). "
+            "Fall back to ECHO_AUDIO_SOURCE=ytdlp for this track."
         )
-    dest = AUDIO_CACHE / f"{track_key}.mp3"  # Spotify previews are MP3
+    dest = AUDIO_CACHE / f"{track_key}.mp3"  # previews are MP3
     tmp = dest.with_suffix(".mp3.part")
     try:
         urllib.request.urlretrieve(url, tmp)
@@ -119,7 +127,7 @@ def _acquire_preview(track: dict) -> tuple[Path, str]:
         if tmp.exists():
             tmp.unlink()
         raise AudioError(f"preview download failed: {e}") from e
-    return dest, "spotify_preview"
+    return dest, source_id
 
 
 def _acquire_loopback(track: dict) -> tuple[Path, str]:

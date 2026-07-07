@@ -114,6 +114,21 @@ CREATE TABLE IF NOT EXISTS edges (
 );
 CREATE INDEX IF NOT EXISTS idx_edges_a ON edges(song_a_id);
 
+-- ---------- Enrichment (external feature DBs, joined by ISRC/MBID) ----------
+-- Precomputed features from open databases, fused with local analysis for coverage
+-- + cross-validation. One row per track; each source stored as its own JSON blob.
+CREATE TABLE IF NOT EXISTS enrichment (
+    track_id      INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+    status        TEXT NOT NULL DEFAULT 'pending',  -- pending|enriched|partial|failed
+    mbid          TEXT,                             -- resolved MusicBrainz recording id
+    ab_highlevel  TEXT,                             -- JSON: AcousticBrainz Essentia high-level (mood/genre/danceability)
+    deezer        TEXT,                             -- JSON: {deezer_id, bpm, gain, preview_url}
+    lastfm_tags   TEXT,                             -- JSON: [{tag, count}, ...]
+    error         TEXT,
+    updated_at    REAL
+);
+CREATE INDEX IF NOT EXISTS idx_enrichment_status ON enrichment(status);
+
 -- ---------- Generic settings (JSON values) ----------
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
@@ -186,6 +201,9 @@ class Store:
             tid = int(cur.lastrowid)
             self._db.execute(
                 "INSERT OR IGNORE INTO features(track_id, status) VALUES (?, 'pending')", (tid,)
+            )
+            self._db.execute(
+                "INSERT OR IGNORE INTO enrichment(track_id, status) VALUES (?, 'pending')", (tid,)
             )
         self._db.commit()
         return tid
@@ -300,6 +318,46 @@ class Store:
     def pair_counts(self) -> dict[str, int]:
         rows = self._db.execute("SELECT label, COUNT(*) n FROM pairs GROUP BY label").fetchall()
         return {r["label"]: r["n"] for r in rows}
+
+    # --- Enrichment ----------------------------------------------------------
+
+    def tracks_needing_enrichment(self, limit: int | None = None) -> list[dict[str, Any]]:
+        sql = (
+            "SELECT t.* FROM tracks t JOIN enrichment e ON e.track_id=t.id "
+            "WHERE e.status IN ('pending','failed') ORDER BY t.added_at DESC"
+        )
+        if limit:
+            sql += f" LIMIT {int(limit)}"
+        return [dict(r) for r in self._db.execute(sql).fetchall()]
+
+    def save_enrichment(self, track_id: int, data: dict) -> None:
+        """Persist enrichment blobs. status is 'enriched' if any source hit, else 'partial'."""
+        hit = any(data.get(k) for k in ("ab_highlevel", "deezer", "lastfm_tags"))
+        self._db.execute(
+            "UPDATE enrichment SET status=?, mbid=?, ab_highlevel=?, deezer=?, lastfm_tags=?, "
+            "error=NULL, updated_at=? WHERE track_id=?",
+            ("enriched" if hit else "partial", data.get("mbid"),
+             json.dumps(data.get("ab_highlevel")) if data.get("ab_highlevel") else None,
+             json.dumps(data.get("deezer")) if data.get("deezer") else None,
+             json.dumps(data.get("lastfm_tags")) if data.get("lastfm_tags") else None,
+             time.time(), track_id),
+        )
+        self._db.commit()
+
+    def mark_enrichment_failed(self, track_id: int, error: str) -> None:
+        self._db.execute(
+            "UPDATE enrichment SET status='failed', error=?, updated_at=? WHERE track_id=?",
+            (error[:500], time.time(), track_id),
+        )
+        self._db.commit()
+
+    def get_enrichment(self, track_id: int) -> dict | None:
+        row = self._db.execute("SELECT * FROM enrichment WHERE track_id=?", (track_id,)).fetchone()
+        return dict(row) if row else None
+
+    def enrichment_counts(self) -> dict[str, int]:
+        rows = self._db.execute("SELECT status, COUNT(*) n FROM enrichment GROUP BY status").fetchall()
+        return {r["status"]: r["n"] for r in rows}
 
     def close(self) -> None:
         self._db.close()

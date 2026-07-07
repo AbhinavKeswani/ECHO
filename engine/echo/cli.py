@@ -158,16 +158,47 @@ def cmd_backfill(args: argparse.Namespace) -> int:
     return cmd_ingest(argparse.Namespace(limit=args.limit))
 
 
+def cmd_enrich(args: argparse.Namespace) -> int:
+    """Fuse external feature DBs (MusicBrainz/AcousticBrainz/Deezer/Last.fm) by ISRC."""
+    from . import enrich
+
+    store = Store()
+    queue = store.tracks_needing_enrichment(limit=args.limit)
+    total = len(queue)
+    print(f"Enriching {total} track(s) via open feature databases…")
+    hits = {"ab": 0, "deezer": 0, "lastfm": 0}
+    for i, track in enumerate(queue, 1):
+        try:
+            data = enrich.enrich_track(track)
+            store.save_enrichment(track["id"], data)
+            if data.get("ab_highlevel"):
+                hits["ab"] += 1
+            if data.get("deezer"):
+                hits["deezer"] += 1
+            if data.get("lastfm_tags"):
+                hits["lastfm"] += 1
+        except Exception as e:  # noqa: BLE001
+            store.mark_enrichment_failed(track["id"], str(e))
+        if i % 25 == 0 or i == total:
+            print(f"  {i}/{total} — AcousticBrainz {hits['ab']}, Deezer {hits['deezer']}, Last.fm {hits['lastfm']}")
+    ec = store.enrichment_counts()
+    print(f"✓ Enrichment: " + (", ".join(f"{k}={v}" for k, v in sorted(ec.items())) or "none"))
+    store.close()
+    return 0
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     """Show library and pipeline counts."""
     store = Store()
     total = store.count_tracks()
     fc = store.feature_counts()
+    ec = store.enrichment_counts()
     pc = store.pair_counts()
-    print(f"Library:  {total} liked songs")
-    print(f"Features: " + (", ".join(f"{k}={v}" for k, v in sorted(fc.items())) or "none"))
-    print(f"Pairs:    " + (", ".join(f"{k}={v}" for k, v in sorted(pc.items())) or "none"))
-    print(f"DB:       {config.DB_PATH}")
+    print(f"Library:    {total} liked songs")
+    print(f"Features:   " + (", ".join(f"{k}={v}" for k, v in sorted(fc.items())) or "none"))
+    print(f"Enrichment: " + (", ".join(f"{k}={v}" for k, v in sorted(ec.items())) or "none"))
+    print(f"Pairs:      " + (", ".join(f"{k}={v}" for k, v in sorted(pc.items())) or "none"))
+    print(f"DB:         {config.DB_PATH}")
     store.close()
     return 0
 
@@ -202,6 +233,10 @@ def build_parser() -> argparse.ArgumentParser:
     sp_backfill.add_argument("--full", action="store_true", help="re-scan entire library")
     sp_backfill.add_argument("--limit", type=int, default=None, help="ingest at most N tracks")
     sp_backfill.set_defaults(func=cmd_backfill)
+
+    sp_enrich = sub.add_parser("enrich", help="fuse external feature DBs by ISRC (fast, API-only)")
+    sp_enrich.add_argument("--limit", type=int, default=None, help="enrich at most N tracks")
+    sp_enrich.set_defaults(func=cmd_enrich)
 
     sp_status = sub.add_parser("status", help="show library / pipeline counts")
     sp_status.set_defaults(func=cmd_status)

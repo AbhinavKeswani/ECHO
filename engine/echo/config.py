@@ -101,6 +101,24 @@ SPOTIFY_SCOPE = "user-library-read playlist-modify-private playlist-modify-publi
 # spotipy caches the OAuth token here so `echo init` runs the browser flow just once.
 SPOTIFY_TOKEN_CACHE = APP_SUPPORT / "spotify_token.json"
 
+# --- Enrichment layer (external feature databases, joined by ISRC/MBID) ------
+#
+# ECHO fuses its own Librosa/Essentia analysis with precomputed features from open
+# databases for coverage + cross-validation (see docs/ENRICHMENT.md):
+#   MusicBrainz    — ISRC -> recording MBID(s) (the join key). 50 req/min; needs UA.
+#   AcousticBrainz — MBID -> Essentia high-level mood/genre/danceability (same method
+#                    as ours!). Read-only frozen 2022 dump. ~10 req/10s.
+#   Deezer         — ISRC -> BPM + 30s preview MP3 (keyless). A legit preview source.
+#   Last.fm        — crowd mood/genre tags (semantic layer). Needs a free API key.
+
+# MusicBrainz requires a descriptive User-Agent identifying the app + contact.
+USER_AGENT = os.environ.get("ECHO_USER_AGENT", "ECHO/0.1 (music vibe graph; personal use)")
+MUSICBRAINZ_API = "https://musicbrainz.org/ws/2"
+ACOUSTICBRAINZ_API = "https://acousticbrainz.org/api/v1"
+DEEZER_API = "https://api.deezer.com"
+# Optional — enables the Last.fm crowd-tag source. Get one at last.fm/api/account/create.
+LASTFM_API_KEY = os.environ.get("ECHO_LASTFM_API_KEY", "").strip()
+
 # --- Claude bridge (LLM cluster naming, M3) ----------------------------------
 
 # The local `claude` CLI binary, same headless-print pattern Atlas uses. Overridable.
