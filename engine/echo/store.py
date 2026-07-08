@@ -359,5 +359,79 @@ class Store:
         rows = self._db.execute("SELECT status, COUNT(*) n FROM enrichment GROUP BY status").fetchall()
         return {r["status"]: r["n"] for r in rows}
 
+    # --- Portable snapshot (export/import for git-based multi-device sync) ----
+
+    def _id_for_spotify(self, sid: str) -> int | None:
+        r = self._db.execute("SELECT id FROM tracks WHERE spotify_id=?", (sid,)).fetchone()
+        return r["id"] if r else None
+
+    _F_COLS = ("status", "audio_source", "audio_query", "librosa", "essentia",
+               "effnet_emb", "musicnn_emb", "bpm", "key", "loudness",
+               "cluster_id", "cluster_score", "analyzed_at")
+    _E_COLS = ("status", "mbid", "ab_highlevel", "deezer", "lastfm_tags", "updated_at")
+
+    def export_snapshot(self) -> dict:
+        """Serialize the library (tracks + features + enrichment + pair labels) to a
+        device-independent dict keyed by Spotify id. JSON blob columns pass through as-is."""
+        tracks: list[dict] = []
+        for t in self._db.execute("SELECT * FROM tracks").fetchall():
+            t = dict(t)
+            f = self._db.execute("SELECT * FROM features WHERE track_id=?", (t["id"],)).fetchone()
+            e = self._db.execute("SELECT * FROM enrichment WHERE track_id=?", (t["id"],)).fetchone()
+            tracks.append({
+                "spotify_id": t["spotify_id"], "title": t["title"], "artist": t["artist"],
+                "artists": json.loads(t["artists"]) if t["artists"] else [t["artist"]],
+                "album": t["album"], "duration_ms": t["duration_ms"], "isrc": t["isrc"],
+                "popularity": t["popularity"], "spotify_url": t["spotify_url"],
+                "preview_url": t["preview_url"], "added_at": t["added_at"],
+                "features": {c: f[c] for c in self._F_COLS} if f else None,
+                "enrichment": {c: e[c] for c in self._E_COLS} if e else None,
+            })
+        pairs = [
+            {"a": p["sa"], "b": p["sb"], "label": p["label"], "source": p["source"], "model_conf": p["model_conf"]}
+            for p in self._db.execute(
+                "SELECT p.label, p.source, p.model_conf, a.spotify_id sa, b.spotify_id sb "
+                "FROM pairs p JOIN tracks a ON a.id=p.song_a_id JOIN tracks b ON b.id=p.song_b_id"
+            ).fetchall()
+        ]
+        return {"format": 1, "exported_at": time.time(), "tracks": tracks, "pairs": pairs}
+
+    def import_snapshot(self, data: dict) -> dict[str, int]:
+        """Merge a snapshot into this DB. Analyzed features / completed enrichment / labeled
+        pairs win; incomplete incoming rows never clobber existing local data."""
+        c = {"tracks": 0, "features": 0, "enrichment": 0, "pairs": 0}
+        for rec in data.get("tracks", []):
+            tid = self.upsert_track({k: rec.get(k) for k in (
+                "spotify_id", "title", "artist", "artists", "album", "duration_ms",
+                "isrc", "popularity", "spotify_url", "preview_url", "added_at")})
+            c["tracks"] += 1
+            f = rec.get("features")
+            if f and f.get("status") == "analyzed":
+                self._db.execute(
+                    "UPDATE features SET " + ", ".join(f"{col}=?" for col in self._F_COLS) + " WHERE track_id=?",
+                    (*[f.get(col) for col in self._F_COLS], tid))
+                c["features"] += 1
+            e = rec.get("enrichment")
+            if e and e.get("status") in ("enriched", "partial"):
+                self._db.execute(
+                    "UPDATE enrichment SET " + ", ".join(f"{col}=?" for col in self._E_COLS) + " WHERE track_id=?",
+                    (*[e.get(col) for col in self._E_COLS], tid))
+                c["enrichment"] += 1
+        for pr in data.get("pairs", []):
+            a, b = self._id_for_spotify(pr["a"]), self._id_for_spotify(pr["b"])
+            if not (a and b) or a == b:
+                continue
+            a, b = (a, b) if a < b else (b, a)
+            labeled = pr.get("label") in ("yes", "no")
+            self._db.execute(
+                "INSERT INTO pairs(song_a_id, song_b_id, label, source, model_conf, created_at, labeled_at) "
+                "VALUES (?,?,?,?,?,?,?) ON CONFLICT(song_a_id, song_b_id) DO UPDATE SET "
+                "label=excluded.label, labeled_at=excluded.labeled_at WHERE excluded.label IN ('yes','no')",
+                (a, b, pr.get("label", "pending"), pr.get("source", "manual"), pr.get("model_conf"),
+                 time.time(), time.time() if labeled else None))
+            c["pairs"] += 1
+        self._db.commit()
+        return c
+
     def close(self) -> None:
         self._db.close()

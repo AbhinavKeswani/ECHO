@@ -43,6 +43,18 @@ non-empty `ECHO_SPOTIFY_CLIENT_ID`):
 
 Do not re-run destructive steps or bump the Essentia pin (see gotchas).
 
+## Standalone & compute-node operation
+
+ECHO's core runs **fully standalone** — no module imports Atlas; the Atlas bridge is an
+optional M6 add-on (`ECHO_ENABLE_ATLAS=0` default) only for surfacing suggestions in the
+Atlas dashboard. A machine without Atlas (e.g. a storage-limited compute box) just runs
+ECHO normally. See [AGENTS.md](AGENTS.md) for the standalone install and the **compute-node
+workflow**: `echo export`/`echo import` move the whole library (features + embeddings +
+labels) as one gzipped snapshot, synced over git, so a spare device can run the heavy
+`ingest` and push results back. Merge is by Spotify id and non-destructive. **Privacy:**
+snapshots hold the personal library and are gitignored — sync them through a PRIVATE repo,
+never the public code repo.
+
 ## Architecture map (`engine/echo/`)
 
 | File | Responsibility |
@@ -56,7 +68,8 @@ Do not re-run destructive steps or bump the Essentia pin (see gotchas).
 | `features.py` | Librosa DSP + Essentia embeddings/mood/key/BPM. `analyze(path, y44)`. |
 | `enrich.py` | MusicBrainz/AcousticBrainz/Deezer/Last.fm clients + `enrich_track(track)`. |
 | `ingest.py` | Resumable acquire→analyze→persist orchestrator. |
-| `cli.py` | `echo` entrypoint: init/probe/sync/models/ingest/backfill/enrich/status. |
+| `cli.py` | `echo` entrypoint: init/probe/sync/models/ingest/backfill/enrich/export/import/status. |
+| `snapshot.py` | Portable gzipped-JSON library export/import for git-based multi-device sync. |
 
 Data model (`echo.db`): `tracks`, `features`, `enrichment`, `pairs`, `models`, `clusters`,
 `edges`, `settings`. Work queues are driven off `features.status` / `enrichment.status`.

@@ -49,9 +49,19 @@ uv run echo status           # progress
 | `echo models` | Download Essentia pretrained models (idempotent) |
 | `echo ingest` | Fetch audio + extract features for pending tracks (resumable) |
 | `echo backfill` | One-shot: models + sync + ingest (the overnight run) |
+| `echo export` / `echo import` | Move the library between devices as one git-syncable snapshot |
 | `echo status` | Library / pipeline counts |
 
 Later milestones add `echo pairs`, `echo train`, `echo graph`, `echo serve`, `echo watch`.
+
+## Runs standalone (Atlas optional)
+
+The core — sync, analysis, enrichment, model, graph, playlists — runs with **no Atlas or
+other local apps** required; nothing in `engine/echo/` imports Atlas. The Atlas integration
+is an optional M6 add-on. You can also offload the heavy audio analysis to a spare
+**compute device** and sync results back over git (`echo export`/`import`). See
+[AGENTS.md](AGENTS.md) for standalone install + the compute-node workflow (and the privacy
+rule: sync your library snapshot through a *private* repo, never this public one).
 
 ## Audio sources & enrichment
 

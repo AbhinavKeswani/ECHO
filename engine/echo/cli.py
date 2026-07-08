@@ -187,6 +187,38 @@ def cmd_enrich(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_export(args: argparse.Namespace) -> int:
+    """Export the library (tracks + features + enrichment + labels) to a syncable snapshot."""
+    from pathlib import Path
+    from . import snapshot
+
+    store = Store()
+    out = Path(args.out)
+    summary = snapshot.write_snapshot(store, out)
+    print(f"✓ Exported {summary['tracks']} tracks ({summary['analyzed']} analyzed, "
+          f"{summary['pairs']} pairs) → {out}")
+    print("  Sync via a PRIVATE repo/branch — this is your personal library (see docs/AGENTS.md).")
+    store.close()
+    return 0
+
+
+def cmd_import(args: argparse.Namespace) -> int:
+    """Import a snapshot from another device (merges; analyzed/labeled data wins)."""
+    from pathlib import Path
+    from . import snapshot
+
+    store = Store()
+    try:
+        counts = snapshot.read_snapshot(store, Path(args.path))
+    except (FileNotFoundError, ValueError) as e:
+        print(f"✗ {e}", file=sys.stderr)
+        return 2
+    print(f"✓ Imported: {counts['tracks']} tracks, {counts['features']} features, "
+          f"{counts['enrichment']} enrichment, {counts['pairs']} pairs merged")
+    store.close()
+    return 0
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     """Show library and pipeline counts."""
     store = Store()
@@ -237,6 +269,14 @@ def build_parser() -> argparse.ArgumentParser:
     sp_enrich = sub.add_parser("enrich", help="fuse external feature DBs by ISRC (fast, API-only)")
     sp_enrich.add_argument("--limit", type=int, default=None, help="enrich at most N tracks")
     sp_enrich.set_defaults(func=cmd_enrich)
+
+    sp_export = sub.add_parser("export", help="export the library to a git-syncable snapshot")
+    sp_export.add_argument("--out", default="echo-library.snapshot.json.gz", help="output file path")
+    sp_export.set_defaults(func=cmd_export)
+
+    sp_import = sub.add_parser("import", help="merge a snapshot exported on another device")
+    sp_import.add_argument("path", help="snapshot file to import")
+    sp_import.set_defaults(func=cmd_import)
 
     sp_status = sub.add_parser("status", help="show library / pipeline counts")
     sp_status.set_defaults(func=cmd_status)

@@ -124,10 +124,15 @@ LASTFM_API_KEY = os.environ.get("ECHO_LASTFM_API_KEY", "").strip()
 # The local `claude` CLI binary, same headless-print pattern Atlas uses. Overridable.
 CLAUDE_BIN = os.environ.get("ECHO_CLAUDE_BIN", "claude")
 
-# --- Atlas integration (M6, read/write bridge) -------------------------------
+# --- Atlas integration (M6, OPTIONAL) ----------------------------------------
 #
-# ECHO owns echo.db; Atlas reads it read-only (mirroring how Atlas reads Vein).
-# ECHO can also file source='echo' todos into Atlas via its local API.
+# ECHO's core — library sync, audio analysis, enrichment, the vibe model, graph, and
+# playlists — runs fully STANDALONE and never imports or requires Atlas. The Atlas
+# bridge is an optional M6 add-on (for surfacing suggestions in the Atlas dashboard),
+# OFF by default, so ECHO installs and runs on a machine that has no Atlas at all
+# (e.g. a storage-limited compute node). ECHO owns echo.db; Atlas would only read it
+# read-only, mirroring how Atlas reads Vein.
+ENABLE_ATLAS = os.environ.get("ECHO_ENABLE_ATLAS", "0") == "1"
 
 
 def _atlas_db() -> Path:

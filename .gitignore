@@ -13,5 +13,10 @@ build/
 *.db-wal
 *.db-shm
 
+# Library snapshots contain your personal liked-songs data + analysis — never publish
+# to the public code repo. Sync these through a PRIVATE repo/branch instead.
+*.snapshot.json.gz
+/data/
+
 # Secrets
 .env
